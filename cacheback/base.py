@@ -3,21 +3,21 @@ import hashlib
 import logging
 import time
 
+from collections.abc import Iterable
 from django.conf import settings
 from django.core.cache import DEFAULT_CACHE_ALIAS, caches
 from django.db.models import Model as DjangoModel
-from django.utils.itercompat import is_iterable
 
 from .utils import enqueue_task, get_job_class
 
 
-logger = logging.getLogger('cacheback')
+logger = logging.getLogger("cacheback")
 
 MEMCACHE_MAX_EXPIRATION = 2592000
 
 
 # Container for call args (which makes things simpler to pass around)
-Call = collections.namedtuple("Call", ['args', 'kwargs'])
+Call = collections.namedtuple("Call", ["args", "kwargs"])
 
 
 def to_bytestring(value):
@@ -29,12 +29,12 @@ def to_bytestring(value):
     :returns: a bytestring
     """
     if isinstance(value, DjangoModel):
-        return ('%s:%s' % (value.__class__, hash(value))).encode('utf-8')
+        return ("%s:%s" % (value.__class__, hash(value))).encode("utf-8")
     if isinstance(value, str):
-        return value.encode('utf8')
+        return value.encode("utf8")
     if isinstance(value, bytes):
         return value
-    return bytes(str(value), 'utf8')
+    return bytes(str(value), "utf8")
 
 
 class Job(object):
@@ -81,7 +81,7 @@ class Job(object):
     #: parameter name to pass in the data which is to be cached in the set method. Data can
     #: also be passed as last positional argument in set method, but using a kw arg may be
     #: clearer or even necessary. Defaults to 'data'
-    set_data_kwarg = 'data'
+    set_data_kwarg = "data"
 
     #: Overrides options for `refresh_cache.apply_async` (e.g. `queue`).
     task_options = None
@@ -91,12 +91,10 @@ class Job(object):
 
     @property
     def class_path(self):
-        return '%s.%s' % (self.__module__, self.__class__.__name__)
+        return "%s.%s" % (self.__module__, self.__class__.__name__)
 
     def __init__(self):
-        self.cache_alias = self.cache_alias or getattr(
-            settings, 'CACHEBACK_CACHE_ALIAS', DEFAULT_CACHE_ALIAS
-        )
+        self.cache_alias = self.cache_alias or getattr(settings, "CACHEBACK_CACHE_ALIAS", DEFAULT_CACHE_ALIAS)
         self.cache = caches[self.cache_alias]
         self.task_options = self.task_options or {}
 
@@ -142,21 +140,16 @@ class Job(object):
             # b) trigger an async refresh and return an empty result
             if self.should_missing_item_be_fetched_synchronously(*args, **kwargs):
                 logger.debug(
-                    ("Job %s with key '%s' - cache MISS - running " "synchronous refresh"),
+                    ("Job %s with key '%s' - cache MISS - running synchronous refresh"),
                     self.class_path,
                     key,
                 )
                 result = self.refresh(*args, **kwargs)
-                return self.process_result(
-                    result, call=call, cache_status=self.MISS, sync_fetch=True
-                )
+                return self.process_result(result, call=call, cache_status=self.MISS, sync_fetch=True)
 
             else:
                 logger.debug(
-                    (
-                        "Job %s with key '%s' - cache MISS - triggering "
-                        "async refresh and returning empty result"
-                    ),
+                    ("Job %s with key '%s' - cache MISS - triggering async refresh and returning empty result"),
                     self.class_path,
                     key,
                 )
@@ -167,9 +160,7 @@ class Job(object):
                 result = self.empty()
                 self.store(key, self.timeout(*args, **kwargs), result)
                 self.async_refresh(*args, **kwargs)
-                return self.process_result(
-                    result, call=call, cache_status=self.MISS, sync_fetch=False
-                )
+                return self.process_result(result, call=call, cache_status=self.MISS, sync_fetch=False)
 
         expiry, data = item
         delta = time.time() - expiry
@@ -181,21 +172,16 @@ class Job(object):
             #    returned this time.  This is normally acceptable.
             if self.should_stale_item_be_fetched_synchronously(delta, *args, **kwargs):
                 logger.debug(
-                    ("Job %s with key '%s' - STALE cache hit - running " "synchronous refresh"),
+                    ("Job %s with key '%s' - STALE cache hit - running synchronous refresh"),
                     self.class_path,
                     key,
                 )
                 result = self.refresh(*args, **kwargs)
-                return self.process_result(
-                    result, call=call, cache_status=self.STALE, sync_fetch=True
-                )
+                return self.process_result(result, call=call, cache_status=self.STALE, sync_fetch=True)
 
             else:
                 logger.debug(
-                    (
-                        "Job %s with key '%s' - STALE cache hit - triggering "
-                        "async refresh and returning stale result"
-                    ),
+                    ("Job %s with key '%s' - STALE cache hit - triggering async refresh and returning stale result"),
                     self.class_path,
                     key,
                 )
@@ -205,9 +191,7 @@ class Job(object):
                 timeout = self.timeout(*args, **kwargs)
                 self.store(key, timeout, data)
                 self.async_refresh(*args, **kwargs)
-                return self.process_result(
-                    data, call=call, cache_status=self.STALE, sync_fetch=False
-                )
+                return self.process_result(data, call=call, cache_status=self.STALE, sync_fetch=False)
         else:
             logger.debug("Job %s with key '%s' - cache HIT", self.class_path, key)
             return self.process_result(data, call=call, cache_status=self.HIT)
@@ -296,7 +280,7 @@ class Job(object):
         """
         self.cache.set(key, (expiry, data), self.cache_ttl)
 
-        if getattr(settings, 'CACHEBACK_VERIFY_CACHE_WRITE', True):
+        if getattr(settings, "CACHEBACK_VERIFY_CACHE_WRITE", True):
             # We verify that the item was cached correctly.  This is to avoid a
             # Memcache problem where some values aren't cached correctly
             # without warning.
@@ -336,8 +320,7 @@ class Job(object):
             # refused.  When this happens, we try to run the task
             # synchronously.
             logger.error(
-                "Unable to trigger task asynchronously - failing "
-                "over to synchronous refresh",
+                "Unable to trigger task asynchronously - failing over to synchronous refresh",
                 exc_info=True,
             )
             try:
@@ -419,9 +402,9 @@ class Job(object):
 
         This is for use in a cache key.
         """
-        if is_iterable(value):
+        if isinstance(value, Iterable):
             value = tuple(to_bytestring(v) for v in value)
-        return hashlib.md5(b':'.join(value)).hexdigest()
+        return hashlib.md5(b":".join(value)).hexdigest()
 
     def fetch(self, *args, **kwargs):
         """
@@ -476,9 +459,7 @@ class Job(object):
             )
             return
 
-        logger.info(
-            "Using %s with constructor args %r and kwargs %r", klass_str, obj_args, obj_kwargs
-        )
+        logger.info("Using %s with constructor args %r and kwargs %r", klass_str, obj_args, obj_kwargs)
         logger.info("Calling refresh with args %r and kwargs %r", call_args, call_kwargs)
         start = time.time()
         try:
